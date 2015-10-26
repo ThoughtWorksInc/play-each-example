@@ -4,6 +4,9 @@ import play.api.mvc.{Action, Controller}
 
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import com.thoughtworks.each.Monadic._
+import scalaz.std.list._
+import scalaz.std.scalaFuture._
 
 class ContactController extends Controller {
 
@@ -12,36 +15,27 @@ class ContactController extends Controller {
   /**
    * All the business logic of this application
    */
-  private def asyncContactsXhtml: Future[xml.Elem] = {
-    asyncGetEmailList().flatMap { emailList =>
-      emailList.foldLeft(Future.successful(Seq.empty[xml.Elem])) { (headFuture, email) =>
-        if (email.matches( """[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}""")) {
-          headFuture.flatMap { head =>
-            asyncGetContactNameByEmail(email).map { name =>
-              head :+
-                <tr>
-                  <td>
-                    {name}
-                  </td>
-                  <td>
-                    {email}
-                  </td>
-                </tr>
-            }
-          }
-        } else {
-          headFuture
-        }
-      }.map { trs =>
-        <html>
-          <body>
-            <table>
-              {trs}
-            </table>
-          </body>
-        </html>
-      }
-    }
+  private def asyncContactsXhtml: Future[xml.Elem] = monadic[Future] {
+    val emailList = asyncGetEmailList().each
+    <html>
+      <body>
+        <table>{
+          (for {
+            email <- emailList.monadicLoop // Converts emailList to a MonadicLoop
+            if email.matches("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}""")
+          } yield {
+            <tr>
+              <td>
+                {asyncGetContactNameByEmail(email).each}
+              </td>
+              <td>
+                {email}
+              </td>
+            </tr>
+          }).underlying // Converts the MonadicLoop returned from for/yield comprehension to a List
+        }</table>
+      </body>
+    </html>
   }
 
   /**
