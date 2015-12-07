@@ -5,8 +5,7 @@ import play.api.libs.ws.WS
 import play.api.Play.current
 import play.utils.UriEncoding
 
-import scala.concurrent.Await
-import scala.concurrent.duration.Duration
+import scala.concurrent.{ExecutionContext, Future}
 
 object ContactService {
 
@@ -15,19 +14,22 @@ object ContactService {
   /**
     * Fetches list of email of all contacts from a remote service.
     */
-  def getEmailList(): List[String] = {
-    val JsArray(jsonSeq) = Await.result(WS.url(ExternalServiceUrlPrefix).get(), Duration.Inf).json
-    (for {
-      JsString(element) <- jsonSeq
-    } yield element) (collection.breakOut(List.canBuildFrom))
+  def asyncGetEmailList()(implicit ec: ExecutionContext): Future[List[String]] = {
+    WS.url(ExternalServiceUrlPrefix).get().map { response =>
+      val JsArray(jsonSeq) = response.json
+      (for {
+        JsString(element) <- jsonSeq
+      } yield element) (collection.breakOut(List.canBuildFrom))
+    }
   }
 
   /**
     * Query the contact full name that corresponds to an email from a remote service.
     */
-  def getContactNameByEmail(email: String): String = {
+  def asyncGetContactNameByEmail(email: String)(implicit ec: ExecutionContext): Future[String] = {
     val url = raw"""$ExternalServiceUrlPrefix${UriEncoding.encodePathSegment(email, "UTF-8")}"""
-    Await.result(WS.url(url).get(), Duration.Inf).body
+    WS.url(url).get().map { response =>
+      response.body
+    }
   }
-
 }
