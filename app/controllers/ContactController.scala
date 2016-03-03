@@ -1,49 +1,54 @@
 package controllers
 
-import play.api.mvc.{Action, Controller}
+import com.google.inject.Inject
+import play.api.libs.json.{JsString, JsArray}
+import play.api.libs.ws.WSClient
+import play.utils.UriEncoding
 
-import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
-import com.thoughtworks.each.Monadic._
-import scalaz.std.list._
+import commands.ContactCommand
+import commands.ContactCommand._
+import play.api.mvc.{Action, Controller}
+import scripts.ContactScript
+
+import scala.concurrent.{ExecutionContext, Future}
+import scalaz.~>
 import scalaz.std.scalaFuture._
 
-class ContactController extends Controller {
+class ContactController @Inject()(wsClient: WSClient)(implicit ec: ExecutionContext) extends Controller {
 
-  import services.ContactService._
+  private def externalServiceUrlPrefix = "http://api-host-name/contact/"
 
-  /**
-   * All the business logic of this application
-   */
-  private def asyncContactsXhtml: Future[xml.Elem] = monadic[Future] {
-    val emailList = asyncGetEmailList().each
-    <html>
-      <body>
-        <table>{
-          (for {
-            email <- emailList.monadicLoop // Converts emailList to a MonadicLoop
-            if email.matches("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}""")
-          } yield {
-            <tr>
-              <td>
-                {asyncGetContactNameByEmail(email).each}
-              </td>
-              <td>
-                {email}
-              </td>
-            </tr>
-          }).underlying // Converts the MonadicLoop returned from for/yield comprehension to a List
-        }</table>
-      </body>
-    </html>
+  private def asyncGetEmailList(): Future[List[String]] = {
+    wsClient.url(externalServiceUrlPrefix).get().map { response =>
+      val JsArray(jsonSeq) = response.json
+      (for {
+        JsString(element) <- jsonSeq
+      } yield element) (collection.breakOut(List.canBuildFrom))
+    }
+  }
+
+  private def asyncGetContactNameByEmail(email: String): Future[String] = {
+    val url = raw"""$externalServiceUrlPrefix${UriEncoding.encodePathSegment(email, "UTF-8")}"""
+    wsClient.url(url).get().map { response =>
+      response.body
+    }
+  }
+
+  private def interpreter = new (ContactCommand ~> Future) {
+    override def apply[A](fa: ContactCommand[A]): Future[A] = {
+      fa match {
+        case GetEmailList =>
+          asyncGetEmailList()
+        case GetContactNameByEmail(email) =>
+          asyncGetContactNameByEmail(email)
+      }
+    }
   }
 
   /**
-   * HTTP handler for /contacts
-   */
+    * HTTP handler for /contacts
+    */
   def contacts = Action.async {
-    asyncContactsXhtml.map { xhtml =>
-      Ok(xhtml)
-    }
+    ContactScript.contactsScript.foldMap(interpreter).map(Ok(_))
   }
 }
