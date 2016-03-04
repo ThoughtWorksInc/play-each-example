@@ -1,19 +1,25 @@
 package commands
 
-import scalaz.Free
+import scalaz.{\/, EitherT, Free}
 
-sealed trait ContactCommand[A]
+sealed trait ContactCommand[+A]
 
 object ContactCommand {
 
-  final case object GetEmailList extends ContactCommand[List[String]]
+  class ContactNotFoundException(message: String = null, cause: Throwable = null) extends Exception(message, cause) {
+    def this(cause: Throwable) = this(cause.toString, cause)
+  }
 
-  final case class GetContactNameByEmail(email: String) extends ContactCommand[String]
+  final case object GetEmailList extends ContactCommand[Throwable \/ List[String]]
 
-  type Script[A] = Free[ContactCommand, A]
+  final case class GetContactNameByEmail(email: String) extends ContactCommand[Throwable \/ String]
 
-  def toScript[A](command: ContactCommand[A]): Script[A] = {
-    Free.liftF(command)
+  type RawScript[A] = Free[ContactCommand, A]
+
+  type Script[A] = EitherT[RawScript, Throwable, A]
+
+  def toScript[A](command: ContactCommand[Throwable \/ A]): Script[A] = {
+    new EitherT[RawScript, Throwable, A](Free.liftF(command))
   }
 
 }
