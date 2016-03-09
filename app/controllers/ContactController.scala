@@ -19,24 +19,25 @@ class ContactController @Inject()(wsClient: WSClient)(implicit ec: ExecutionCont
 
   private def externalServiceUrlPrefix = "http://api-host-name/contact/"
 
-  private def asyncGetEmailList(): Future[Throwable \/ List[String]] = {
-    wsClient.url(externalServiceUrlPrefix).get().map { response =>
+  private def asyncGetEmailList(): Future[Throwable \/ List[String]] = throwableMonadic[Future] {
+    try {
+      val response = wsClient.url(externalServiceUrlPrefix).get().each
       val JsArray(jsonSeq) = response.json
       val emailList = (for {
         JsString(element) <- jsonSeq
       } yield element) (collection.breakOut(List.canBuildFrom))
       \/-(emailList)
-    }.recover {
+    } catch {
       case e: Exception =>
         -\/(e)
     }
   }
 
-  private def asyncGetContactNameByEmail(email: String): Future[Throwable \/ String] = {
-    val url = raw"""$externalServiceUrlPrefix${UriEncoding.encodePathSegment(email, "UTF-8")}"""
-    wsClient.url(url).get().map { response =>
-      \/-(response.body)
-    }.recover {
+  private def asyncGetContactNameByEmail(email: String): Future[Throwable \/ String] = throwableMonadic[Future] {
+    try {
+      val url = raw"""$externalServiceUrlPrefix${UriEncoding.encodePathSegment(email, "UTF-8")}"""
+      \/-(wsClient.url(url).get().each.body)
+    } catch {
       case e: Exception =>
         -\/(e)
     }

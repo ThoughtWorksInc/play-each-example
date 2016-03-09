@@ -22,4 +22,8 @@ object ContactCommand {
     new EitherT[RawScript, Throwable, A](Free.liftF(command))
   }
 
+  implicit def downcastScript[A, B](script: Script[A])(implicit f: A => B) = {
+    script.map(f)
+  }
+
 }
